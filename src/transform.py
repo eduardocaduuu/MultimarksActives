@@ -42,7 +42,7 @@ from .constants import (
 from .io import criar_indice_sku, buscar_sku, gerar_id_cliente
 
 
-def arredondar_percentual(valor: float, casas_decimais: int = 1) -> float:
+def arredondar_percentual(valor: float, casas_decimais: int = 0) -> float:
     """
     Arredonda um valor percentual sempre arredondando >= 0.5 para cima.
     
@@ -53,9 +53,23 @@ def arredondar_percentual(valor: float, casas_decimais: int = 1) -> float:
     Returns:
         Valor arredondado
     """
+    if pd.isna(valor) or valor == 0:
+        return 0.0
+    
     multiplicador = 10 ** casas_decimais
-    # Multiplica, arredonda (>= 0.5 vai para cima) e divide
-    return round(valor * multiplicador) / multiplicador
+    valor_multiplicado = valor * multiplicador
+    
+    # Para garantir que >= 0.5 sempre arredonde para cima
+    # Extrai a parte decimal e compara
+    parte_inteira = int(valor_multiplicado)
+    parte_decimal = valor_multiplicado - parte_inteira
+    
+    if parte_decimal >= 0.5:
+        resultado = math.ceil(valor_multiplicado) / multiplicador
+    else:
+        resultado = math.floor(valor_multiplicado) / multiplicador
+    
+    return resultado
 
 
 def enriquecer_vendas_com_marca(
