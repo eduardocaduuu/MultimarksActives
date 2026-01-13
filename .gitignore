@@ -33,8 +33,9 @@ env/
 *.swo
 *~
 
-# Streamlit
-.streamlit/
+# Streamlit (manter apenas config.toml)
+.streamlit/*
+!.streamlit/config.toml
 
 # OS
 .DS_Store
