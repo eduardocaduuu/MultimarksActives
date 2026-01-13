@@ -3,7 +3,11 @@
     "allow": [
       "Bash(mkdir:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Implementacao inicial do Multimarks Active Circles\n\n- Aplicacao Streamlit para analise de revendedores ativos e multimarcas\n- Cruzamento de planilhas BD Produtos e Vendas\n- Normalizacao robusta de SKU com match de 4/5 digitos\n- Metricas por ciclo, setor e cliente\n- Identificacao de clientes multimarcas\n- Auditoria de SKUs nao encontrados\n- Exportacao CSV/Excel\n- Configuracao para deploy no Render\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)"
     ]
   }
 }

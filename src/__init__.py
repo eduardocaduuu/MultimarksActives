@@ -31,6 +31,7 @@ from .transform import (
     calcular_top_setores,
     obter_detalhe_cliente,
     gerar_auditoria_skus,
+    gerar_produtos_nao_cadastrados,
     aplicar_filtros,
 )
 from .reports import (

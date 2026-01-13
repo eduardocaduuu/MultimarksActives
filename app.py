@@ -37,6 +37,7 @@ from src.transform import (
     calcular_top_setores,
     obter_detalhe_cliente,
     gerar_auditoria_skus,
+    gerar_produtos_nao_cadastrados,
     aplicar_filtros,
 )
 from src.reports import (
@@ -375,9 +376,10 @@ def main():
         # ======================================================================
         # TABS PRINCIPAIS
         # ======================================================================
-        tab_visao, tab_multi, tab_audit, tab_cliente = st.tabs([
+        tab_visao, tab_multi, tab_novos, tab_audit, tab_cliente = st.tabs([
             ":bar_chart: Visao Geral",
             ":star: Multimarcas",
+            ":new: Produtos Novos",
             ":mag: Auditoria",
             ":bust_in_silhouette: Detalhe Cliente"
         ])
@@ -528,6 +530,92 @@ def main():
 
             else:
                 st.info("Nenhum cliente multimarcas encontrado para os filtros selecionados.")
+
+        # ======================================================================
+        # TAB: PRODUTOS NOVOS (NAO CADASTRADOS)
+        # ======================================================================
+        with tab_novos:
+            st.subheader(":new: Produtos Novos / Lancamentos")
+            st.markdown("""
+            Produtos que aparecem na planilha de **Vendas** mas **nao estao cadastrados**
+            no BD Produtos. Podem ser lancamentos recentes que precisam ser adicionados ao cadastro.
+            """)
+
+            # Gerar relatorio de produtos nao cadastrados
+            df_nao_cadastrados = gerar_produtos_nao_cadastrados(dados['df_vendas_enriquecido'])
+
+            # Filtrar pelos ciclos selecionados se houver
+            if ciclos_selecionados and not df_nao_cadastrados.empty:
+                # Filtrar produtos que aparecem nos ciclos selecionados
+                mask = df_nao_cadastrados['Ciclos'].apply(
+                    lambda x: any(c in x for c in [str(c) for c in ciclos_selecionados])
+                )
+                df_nao_cadastrados = df_nao_cadastrados[mask]
+
+            if not df_nao_cadastrados.empty:
+                # Metricas
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        "Produtos Nao Cadastrados",
+                        f"{len(df_nao_cadastrados):,}"
+                    )
+                with col2:
+                    st.metric(
+                        "Total de Itens Vendidos",
+                        f"{df_nao_cadastrados['Total_Itens'].sum():,.0f}"
+                    )
+                with col3:
+                    st.metric(
+                        "Valor Total",
+                        f"R$ {df_nao_cadastrados['Valor_Total'].sum():,.2f}"
+                    )
+
+                st.markdown("---")
+                st.markdown("""
+                **Dica:** Use esta tabela para identificar produtos que precisam ser
+                cadastrados no BD Produtos. O SKU e Nome vem da planilha de Vendas.
+                """)
+
+                # Formatar tabela para exibicao
+                df_novos_fmt = df_nao_cadastrados.copy()
+                df_novos_fmt['Valor_Total'] = df_novos_fmt['Valor_Total'].apply(
+                    lambda x: f"R$ {x:,.2f}"
+                )
+                df_novos_fmt.columns = [
+                    'SKU', 'Nome do Produto', 'Qtde Vendas', 'Total Itens',
+                    'Valor Total', 'Ciclos', 'Setores'
+                ]
+
+                st.dataframe(df_novos_fmt, use_container_width=True, hide_index=True)
+
+                # Botoes de download
+                col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 2])
+                with col_dl1:
+                    # Preparar dados para download (sem formatacao de moeda)
+                    df_download = df_nao_cadastrados.copy()
+                    df_download.columns = [
+                        'SKU', 'Nome_Produto', 'Qtde_Vendas', 'Total_Itens',
+                        'Valor_Total', 'Ciclos', 'Setores'
+                    ]
+                    st.download_button(
+                        ":arrow_down: CSV",
+                        data=exportar_csv(df_download),
+                        file_name=gerar_nome_arquivo("produtos_nao_cadastrados", "csv"),
+                        mime="text/csv",
+                        key="dl_novos_csv"
+                    )
+                with col_dl2:
+                    st.download_button(
+                        ":arrow_down: Excel",
+                        data=exportar_excel(df_download, "ProdutosNovos"),
+                        file_name=gerar_nome_arquivo("produtos_nao_cadastrados", "xlsx"),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_novos_xlsx"
+                    )
+
+            else:
+                st.success(":white_check_mark: Todos os produtos vendidos estao cadastrados no BD Produtos!")
 
         # ======================================================================
         # TAB: AUDITORIA

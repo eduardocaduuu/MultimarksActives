@@ -382,6 +382,58 @@ def gerar_auditoria_skus(df_vendas_enriquecido: pd.DataFrame) -> pd.DataFrame:
     return df_result
 
 
+def gerar_produtos_nao_cadastrados(df_vendas_enriquecido: pd.DataFrame) -> pd.DataFrame:
+    """
+    Gera tabela de produtos nao cadastrados no BD (possiveis lancamentos).
+
+    Mostra SKU, nome do produto (da planilha de vendas), quantidade total vendida
+    e valor total para ajudar a identificar produtos novos que precisam ser
+    cadastrados no BD Produtos.
+
+    Args:
+        df_vendas_enriquecido: DataFrame de vendas com marcas
+
+    Returns:
+        DataFrame com produtos nao cadastrados agregados
+    """
+    # Filtrar apenas produtos nao encontrados e do tipo Venda
+    mask = (
+        (df_vendas_enriquecido[COL_MOTIVO_MATCH] == MOTIVO_NAO_ENCONTRADO) &
+        (df_vendas_enriquecido[VENDAS_COL_TIPO] == TIPO_VENDA)
+    )
+
+    df_nao_cadastrados = df_vendas_enriquecido[mask].copy()
+
+    if df_nao_cadastrados.empty:
+        return pd.DataFrame(columns=[
+            'SKU', 'Nome_Produto', 'Qtde_Vendas', 'Total_Itens',
+            'Valor_Total', 'Ciclos', 'Setores'
+        ])
+
+    # Agregar por SKU normalizado e nome do produto
+    agg = df_nao_cadastrados.groupby([
+        COL_CODIGO_PRODUTO_NORMALIZADO,
+        VENDAS_COL_NOME_PRODUTO
+    ]).agg({
+        VENDAS_COL_CODIGO_PRODUTO: 'count',  # Quantidade de vendas
+        VENDAS_COL_QTD_ITENS: 'sum',         # Total de itens
+        VENDAS_COL_VALOR: 'sum',             # Valor total
+        VENDAS_COL_CICLO: lambda x: ', '.join(sorted(x.unique().astype(str))),  # Ciclos
+        VENDAS_COL_SETOR: lambda x: ', '.join(sorted(x.unique().astype(str)))   # Setores
+    }).reset_index()
+
+    # Renomear colunas
+    agg.columns = [
+        'SKU', 'Nome_Produto', 'Qtde_Vendas', 'Total_Itens',
+        'Valor_Total', 'Ciclos', 'Setores'
+    ]
+
+    # Ordenar por valor total (mais relevantes primeiro)
+    agg = agg.sort_values('Valor_Total', ascending=False)
+
+    return agg
+
+
 def aplicar_filtros(
     df: pd.DataFrame,
     ciclos: List[str] = None,
