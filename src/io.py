@@ -361,6 +361,72 @@ def buscar_sku(
     return None, None, MOTIVO_NAO_ENCONTRADO
 
 
+def carregar_bd_produtos_local(caminho: str = "data/bd_produtos.csv") -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Carrega o BD Produtos de um arquivo CSV local fixo.
+
+    Args:
+        caminho: Caminho para o arquivo CSV (padrao: data/bd_produtos.csv)
+
+    Returns:
+        Tupla (DataFrame processado, lista de avisos)
+
+    Raises:
+        DataValidationError: Se arquivo nao existir ou colunas faltarem
+    """
+    import os
+
+    avisos = []
+
+    # Verificar se arquivo existe
+    if not os.path.exists(caminho):
+        raise DataValidationError(
+            f"Arquivo BD Produtos nao encontrado: {caminho}"
+        )
+
+    # Ler CSV com diferentes encodings
+    df = None
+    for encoding in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
+        try:
+            df = pd.read_csv(caminho, encoding=encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+
+    if df is None:
+        raise DataValidationError(
+            f"Nao foi possivel ler o arquivo {caminho} com nenhum encoding"
+        )
+
+    # Normalizar nomes de colunas (remover espacos)
+    df.columns = df.columns.str.strip()
+
+    # Validar colunas obrigatorias
+    valido, faltantes = validar_colunas(df, BD_REQUIRED_COLUMNS, "BD Produtos")
+    if not valido:
+        raise DataValidationError(
+            f"Colunas obrigatorias faltando em BD Produtos: {', '.join(faltantes)}"
+        )
+
+    # Normalizar SKU
+    df[COL_SKU_NORMALIZADO] = df[BD_COL_SKU].apply(normalizar_sku)
+
+    # Normalizar Marca
+    df[BD_COL_MARCA] = df[BD_COL_MARCA].apply(normalizar_marca)
+
+    # Remover linhas com SKU vazio apos normalizacao
+    linhas_antes = len(df)
+    df = df[df[COL_SKU_NORMALIZADO] != ""]
+    linhas_removidas = linhas_antes - len(df)
+
+    if linhas_removidas > 0:
+        avisos.append(f"{linhas_removidas} linhas removidas por SKU vazio/invalido")
+
+    avisos.append(f"BD Produtos carregado: {len(df)} produtos")
+
+    return df, avisos
+
+
 def gerar_id_cliente(row: pd.Series) -> str:
     """
     Gera um identificador unico para o cliente/revendedor.

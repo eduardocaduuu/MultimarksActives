@@ -40,11 +40,12 @@ env/
 .DS_Store
 Thumbs.db
 
-# Data files (nao versionar planilhas de dados)
+# Data files (nao versionar planilhas de upload)
 *.xlsx
 *.xls
 *.csv
 !*_Teste.csv
+!data/bd_produtos.csv
 
 # Logs
 *.log

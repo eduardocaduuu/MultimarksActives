@@ -26,6 +26,7 @@ from src.constants import (
 from src.io import (
     processar_bd_produtos,
     processar_vendas,
+    carregar_bd_produtos_local,
     DataValidationError,
 )
 from src.transform import (
@@ -126,38 +127,42 @@ st.markdown("""
 
 
 # =============================================================================
+# CONFIGURACAO DO BD PRODUTOS (ARQUIVO FIXO)
+# =============================================================================
+BD_PRODUTOS_PATH = "data/bd_produtos.csv"
+
+
+# =============================================================================
 # FUNCOES DE CACHE
 # =============================================================================
-def calcular_hash_arquivo(arquivo: BytesIO) -> str:
-    """Calcula hash MD5 do arquivo para cache."""
-    arquivo.seek(0)
-    hash_md5 = hashlib.md5(arquivo.read()).hexdigest()
-    arquivo.seek(0)
-    return hash_md5
+@st.cache_data(show_spinner=False)
+def carregar_bd_produtos_cached():
+    """
+    Carrega o BD Produtos do arquivo fixo com cache.
+
+    Returns:
+        Tupla (DataFrame, lista de avisos)
+    """
+    return carregar_bd_produtos_local(BD_PRODUTOS_PATH)
 
 
 @st.cache_data(show_spinner=False)
-def processar_dados_cached(
-    bd_bytes: bytes,
-    bd_nome: str,
-    vendas_bytes: bytes,
-    vendas_nome: str
-):
+def processar_vendas_cached(vendas_bytes: bytes, vendas_nome: str, _df_bd):
     """
-    Processa os dados com cache baseado no conteudo dos arquivos.
+    Processa os dados de vendas com cache baseado no conteudo do arquivo.
+
+    Args:
+        vendas_bytes: Bytes do arquivo de vendas
+        vendas_nome: Nome do arquivo
+        _df_bd: DataFrame do BD Produtos (prefixo _ para nao usar no hash)
 
     Returns:
-        Tupla com todos os DataFrames processados e avisos
+        Dicionario com todos os DataFrames processados e avisos
     """
     # Converter bytes para BytesIO
-    bd_buffer = BytesIO(bd_bytes)
     vendas_buffer = BytesIO(vendas_bytes)
 
     avisos = []
-
-    # Processar BD Produtos
-    df_bd, avisos_bd = processar_bd_produtos(bd_buffer, bd_nome)
-    avisos.extend([f"[BD] {a}" for a in avisos_bd])
 
     # Processar Vendas
     df_vendas, avisos_vendas = processar_vendas(vendas_buffer, vendas_nome)
@@ -165,7 +170,7 @@ def processar_dados_cached(
 
     # Enriquecer vendas com marca
     df_vendas_enriquecido, avisos_enrich = enriquecer_vendas_com_marca(
-        df_vendas, df_bd
+        df_vendas, _df_bd
     )
     avisos.extend([f"[Enriquecimento] {a}" for a in avisos_enrich])
 
@@ -182,7 +187,6 @@ def processar_dados_cached(
     df_auditoria = gerar_auditoria_skus(df_vendas_enriquecido)
 
     return {
-        'df_bd': df_bd,
         'df_vendas_enriquecido': df_vendas_enriquecido,
         'df_vendas_filtrado': df_vendas_filtrado,
         'df_clientes': df_clientes,
@@ -202,18 +206,30 @@ def main():
     st.markdown("---")
 
     # ==========================================================================
-    # SIDEBAR - Filtros e Upload
+    # CARREGAR BD PRODUTOS (AUTOMATICO)
+    # ==========================================================================
+    try:
+        df_bd, avisos_bd = carregar_bd_produtos_cached()
+        bd_carregado = True
+    except DataValidationError as e:
+        st.error(f":x: Erro ao carregar BD Produtos: {str(e)}")
+        bd_carregado = False
+        df_bd = None
+        avisos_bd = []
+
+    # ==========================================================================
+    # SIDEBAR - Upload de Vendas
     # ==========================================================================
     with st.sidebar:
-        st.header(":file_folder: Upload de Arquivos")
+        st.header(":file_folder: Upload de Vendas")
 
-        # Upload BD Produtos
-        arquivo_bd = st.file_uploader(
-            "BD Produtos (SKU, Nome, Marca)",
-            type=['xlsx', 'xls', 'csv'],
-            key='bd_produtos',
-            help="Planilha com cadastro de produtos: SKU, Nome, Marca"
-        )
+        # Mostrar status do BD Produtos
+        if bd_carregado:
+            st.success(f":white_check_mark: BD Produtos: {len(df_bd)} produtos")
+        else:
+            st.error(":x: BD Produtos nao carregado")
+
+        st.markdown("---")
 
         # Upload Vendas
         arquivo_vendas = st.file_uploader(
@@ -230,27 +246,27 @@ def main():
             ":gear: Processar Dados",
             type="primary",
             use_container_width=True,
-            disabled=(arquivo_bd is None or arquivo_vendas is None)
+            disabled=(not bd_carregado or arquivo_vendas is None)
         )
 
     # ==========================================================================
     # PROCESSAMENTO
     # ==========================================================================
-    if arquivo_bd is None or arquivo_vendas is None:
+    if not bd_carregado:
+        st.error(
+            "O arquivo **BD Produtos** nao foi encontrado ou esta invalido. "
+            "Verifique se o arquivo `data/bd_produtos.csv` existe no servidor."
+        )
+        return
+
+    if arquivo_vendas is None:
         st.info(
-            ":point_left: Faca upload das planilhas **BD Produtos** e **Vendas** "
+            ":point_left: Faca upload da planilha de **Vendas** "
             "na barra lateral para comecar."
         )
         st.markdown("""
-        ### Formato esperado das planilhas:
+        ### Formato esperado da planilha de Vendas:
 
-        **BD Produtos:**
-        | SKU | Nome | Marca |
-        |-----|------|-------|
-        | 01234 | Produto X | oBoticário |
-        | 05678 | Produto Y | Eudora |
-
-        **Vendas:**
         | Setor | NomeRevendedora | CodigoRevendedora | CicloFaturamento | CodigoProduto | NomeProduto | Tipo | QuantidadeItens | ValorPraticado | MeioCaptacao |
         |-------|-----------------|-------------------|------------------|---------------|-------------|------|-----------------|----------------|--------------|
         | Norte | Maria Silva | 12345 | 202401 | 01234 | Produto X | Venda | 2 | 89.90 | Digital |
@@ -262,17 +278,19 @@ def main():
         if processar:
             with st.spinner("Processando dados... Isso pode levar alguns segundos."):
                 try:
-                    # Ler bytes dos arquivos
-                    bd_bytes = arquivo_bd.getvalue()
+                    # Ler bytes do arquivo de vendas
                     vendas_bytes = arquivo_vendas.getvalue()
 
                     # Processar com cache
-                    dados = processar_dados_cached(
-                        bd_bytes,
-                        arquivo_bd.name,
+                    dados = processar_vendas_cached(
                         vendas_bytes,
-                        arquivo_vendas.name
+                        arquivo_vendas.name,
+                        df_bd
                     )
+
+                    # Adicionar avisos do BD aos dados
+                    dados['avisos'] = [f"[BD] {a}" for a in avisos_bd] + dados['avisos']
+                    dados['df_bd'] = df_bd
 
                     st.session_state['dados_processados'] = dados
                     st.success(":white_check_mark: Dados processados com sucesso!")

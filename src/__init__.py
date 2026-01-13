@@ -17,6 +17,7 @@ from .io import (
     validar_colunas,
     processar_bd_produtos,
     processar_vendas,
+    carregar_bd_produtos_local,
     criar_indice_sku,
     buscar_sku,
     gerar_id_cliente,
