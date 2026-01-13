@@ -11,6 +11,7 @@ Este modulo contem:
 from typing import Tuple, Dict, List, Any
 import pandas as pd
 import numpy as np
+import math
 
 from .constants import (
     VENDAS_COL_SETOR,
@@ -39,6 +40,22 @@ from .constants import (
 )
 
 from .io import criar_indice_sku, buscar_sku, gerar_id_cliente
+
+
+def arredondar_percentual(valor: float, casas_decimais: int = 1) -> float:
+    """
+    Arredonda um valor percentual sempre arredondando >= 0.5 para cima.
+    
+    Args:
+        valor: Valor a ser arredondado
+        casas_decimais: Número de casas decimais (padrão: 1)
+    
+    Returns:
+        Valor arredondado
+    """
+    multiplicador = 10 ** casas_decimais
+    # Multiplica, arredonda (>= 0.5 vai para cima) e divide
+    return round(valor * multiplicador) / multiplicador
 
 
 def enriquecer_vendas_com_marca(
@@ -217,9 +234,12 @@ def calcular_metricas_setor_ciclo(df_clientes: pd.DataFrame) -> pd.DataFrame:
     ]
 
     # Calcular percentual de multimarcas
-    agg['%Multimarcas'] = (
-        agg['ClientesMultimarcas'] / agg['ClientesAtivos'] * 100
-    ).round(1)
+    agg['%Multimarcas'] = agg.apply(
+        lambda row: arredondar_percentual(
+            (row['ClientesMultimarcas'] / row['ClientesAtivos'] * 100) if row['ClientesAtivos'] > 0 else 0
+        ),
+        axis=1
+    )
 
     return agg
 
@@ -241,7 +261,9 @@ def calcular_metricas_gerais(
     total_ativos = df_clientes[COL_CLIENTE_ID].nunique()
     total_multimarcas = df_clientes[df_clientes[COL_IS_MULTIMARCAS]][COL_CLIENTE_ID].nunique()
 
-    percent_multimarcas = (total_multimarcas / total_ativos * 100) if total_ativos > 0 else 0
+    percent_multimarcas = arredondar_percentual(
+        (total_multimarcas / total_ativos * 100) if total_ativos > 0 else 0
+    )
 
     total_itens = df_vendas_filtrado[VENDAS_COL_QTD_ITENS].sum()
     total_valor = df_vendas_filtrado[VENDAS_COL_VALOR].sum()

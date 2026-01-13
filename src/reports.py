@@ -7,7 +7,9 @@ para exibicao na interface do usuario.
 
 from typing import Dict, List, Any
 import pandas as pd
+import math
 
+from .transform import arredondar_percentual
 from .constants import (
     VENDAS_COL_CICLO,
     VENDAS_COL_SETOR,
@@ -34,6 +36,16 @@ def formatar_tabela_setor_ciclo(df: pd.DataFrame) -> pd.DataFrame:
         DataFrame formatado para exibicao
     """
     df_fmt = df.copy()
+
+    # Zerar setor "INICIOS CENTRAL 13706" apenas na visualizacao (calculos permanecem)
+    SETOR_ZERAR_VISUALIZACAO = "INICIOS CENTRAL 13706"
+    mask_setor = df_fmt[VENDAS_COL_SETOR] == SETOR_ZERAR_VISUALIZACAO
+    if mask_setor.any():
+        df_fmt.loc[mask_setor, 'ClientesAtivos'] = 0
+        df_fmt.loc[mask_setor, 'ClientesMultimarcas'] = 0
+        df_fmt.loc[mask_setor, '%Multimarcas'] = 0
+        df_fmt.loc[mask_setor, 'ItensTotal'] = 0
+        df_fmt.loc[mask_setor, 'ValorTotal'] = 0
 
     # Renomear colunas para exibicao
     colunas_renomear = {
@@ -261,9 +273,12 @@ def calcular_estatisticas_ciclo(df_setor_ciclo: pd.DataFrame) -> pd.DataFrame:
     }).reset_index()
 
     # Calcular percentual
-    agg['%Multimarcas'] = (
-        agg['ClientesMultimarcas'] / agg['ClientesAtivos'] * 100
-    ).round(1)
+    agg['%Multimarcas'] = agg.apply(
+        lambda row: arredondar_percentual(
+            (row['ClientesMultimarcas'] / row['ClientesAtivos'] * 100) if row['ClientesAtivos'] > 0 else 0
+        ),
+        axis=1
+    )
 
     # Renomear
     agg = agg.rename(columns={
