@@ -12,7 +12,7 @@ import re
 import csv
 import json
 from typing import Tuple, List, Optional, Set, Dict, Any
-from io import BytesIO
+from io import BytesIO, StringIO
 
 import pandas as pd
 
@@ -165,7 +165,12 @@ def corrigir_csv(raw: bytes, target_col: str = "NomeProduto") -> Tuple[bytes, Di
         },
     }
 
-    fixed_rows = [sep.join(header)]
+    # Usar StringIO e csv.writer para escrever CSV corrigido corretamente
+    output = StringIO()
+    writer = csv.writer(output, delimiter=sep, quoting=csv.QUOTE_MINIMAL, lineterminator='\n')
+    
+    # Escrever header
+    writer.writerow(header)
 
     # --- 1) Reconstituir registros quebrados (linhas "continuação" começam com sep) ---
     i = 1  # começa após header
@@ -193,7 +198,7 @@ def corrigir_csv(raw: bytes, target_col: str = "NomeProduto") -> Tuple[bytes, Di
 
         # --- 2) Ajuste final: colunas a mais / a menos (sem descartar) ---
         if len(parts) == expected_cols:
-            fixed_rows.append(sep.join(parts))
+            writer.writerow(parts)
             report["stats"]["unchanged"] += 1
             report["stats"]["data_records_emitted"] += 1
             i += 1
@@ -223,7 +228,7 @@ def corrigir_csv(raw: bytes, target_col: str = "NomeProduto") -> Tuple[bytes, Di
                 "original_col_count": len(parts),
                 "final_col_count": len(new_parts),
             })
-            fixed_rows.append(sep.join(new_parts))
+            writer.writerow(new_parts)
             report["stats"]["data_records_emitted"] += 1
             i += 1
             continue
@@ -239,12 +244,12 @@ def corrigir_csv(raw: bytes, target_col: str = "NomeProduto") -> Tuple[bytes, Di
                 "original_col_count": len(parts),
                 "final_col_count": len(new_parts),
             })
-            fixed_rows.append(sep.join(new_parts))
+            writer.writerow(new_parts)
             report["stats"]["data_records_emitted"] += 1
             i += 1
             continue
 
-    csv_corrigido = "\n".join(fixed_rows).encode("utf-8")
+    csv_corrigido = output.getvalue().encode("utf-8")
     
     return csv_corrigido, report
 
@@ -342,7 +347,7 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
                         "O arquivo possui linhas inconsistentes (ex: separador dentro do texto, aspas quebradas ou colunas a mais).\n\n"
                         "👉 Nenhuma linha foi descartada.\n"
                         "👉 Corrija o CSV ou converta para Excel (.xlsx).\n\n"
-                        f"Detalhe técnico: {str(e)[:300]}"
+                        f"Detalhe técnico: {str(e2)[:300]}"
                     )
 
             # Garantir string
