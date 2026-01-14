@@ -114,17 +114,48 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
             engine = 'openpyxl' if nome_lower.endswith('.xlsx') else None
             df = pd.read_excel(arquivo, engine=engine)
         elif nome_lower.endswith('.csv'):
-            # Tentar diferentes encodings comuns em dados brasileiros
-            arquivo.seek(0)
-            try:
-                df = pd.read_csv(arquivo, encoding='utf-8')
-            except UnicodeDecodeError:
+            # Tentar diferentes combinacoes de encoding e separador
+            # Comum em arquivos brasileiros: UTF-8 com BOM, Latin-1, CP1252
+            # Separadores: virgula (,) ou ponto e virgula (;)
+            encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
+            separadores = [',', ';']
+
+            df = None
+            ultimo_erro = None
+
+            for encoding in encodings:
+                for sep in separadores:
+                    try:
+                        arquivo.seek(0)
+                        df_temp = pd.read_csv(arquivo, encoding=encoding, sep=sep)
+
+                        # Verificar se o CSV foi lido corretamente
+                        # Se tiver apenas 1 coluna e muitos valores, provavelmente o separador esta errado
+                        if len(df_temp.columns) > 1:
+                            df = df_temp
+                            break
+                    except Exception as e:
+                        ultimo_erro = e
+                        continue
+
+                if df is not None:
+                    break
+
+            # Se nenhuma combinacao funcionou com multiplas colunas, tentar deteccao automatica
+            if df is None or len(df.columns) <= 1:
                 arquivo.seek(0)
                 try:
-                    df = pd.read_csv(arquivo, encoding='latin-1')
-                except UnicodeDecodeError:
+                    # Tentar com deteccao automatica de separador
+                    df = pd.read_csv(arquivo, encoding='utf-8-sig', sep=None, engine='python')
+                except Exception:
                     arquivo.seek(0)
-                    df = pd.read_csv(arquivo, encoding='cp1252')
+                    try:
+                        df = pd.read_csv(arquivo, encoding='latin-1', sep=None, engine='python')
+                    except Exception as e:
+                        raise DataValidationError(
+                            f"Nao foi possivel ler o arquivo CSV. "
+                            f"Verifique o encoding e separador. Erro: {str(ultimo_erro or e)}"
+                        )
         else:
             raise DataValidationError(
                 f"Formato de arquivo nao suportado: {nome_arquivo}. "
