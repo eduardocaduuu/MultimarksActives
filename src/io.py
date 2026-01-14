@@ -9,6 +9,7 @@ Este modulo contem:
 """
 
 import re
+import csv
 from typing import Tuple, List, Optional, Set
 from io import BytesIO
 
@@ -114,20 +115,18 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
             engine = 'openpyxl' if nome_lower.endswith('.xlsx') else None
             df = pd.read_excel(arquivo, engine=engine)
         elif nome_lower.endswith('.csv'):
-            # Ler o conteudo bruto do arquivo
             arquivo.seek(0)
             conteudo_bruto = arquivo.read()
 
-            # Tentar detectar encoding e decodificar
+            # Detectar encoding
             conteudo_texto = None
             encoding_usado = None
-
             for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'iso-8859-1', 'windows-1252']:
                 try:
                     conteudo_texto = conteudo_bruto.decode(enc)
                     encoding_usado = enc
                     break
-                except (UnicodeDecodeError, AttributeError):
+                except Exception:
                     continue
 
             if conteudo_texto is None:
@@ -137,7 +136,7 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
                 )
 
             # Detectar separador pela primeira linha
-            primeira_linha = conteudo_texto.split('\n')[0]
+            primeira_linha = conteudo_texto.splitlines()[0]
             contagem = {
                 '|': primeira_linha.count('|'),
                 ';': primeira_linha.count(';'),
@@ -145,39 +144,35 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
                 '\t': primeira_linha.count('\t')
             }
             separador = max(contagem, key=contagem.get)
-
-            # Se nenhum separador foi encontrado, usar virgula como padrao
             if contagem[separador] == 0:
                 separador = ','
 
-            # Converter para lista de linhas e processar manualmente
-            linhas = conteudo_texto.strip().split('\n')
+            # Usar pandas para ler de forma robusta (respeita aspas, campos com separador, etc)
+            try:
+                df = pd.read_csv(
+                    BytesIO(conteudo_bruto),
+                    sep=separador,
+                    encoding=encoding_usado,
+                    dtype=str,
+                    engine="python",
+                    quotechar='"',
+                    quoting=csv.QUOTE_MINIMAL,
+                    keep_default_na=False,
+                    on_bad_lines="skip",  # Pula linhas com problemas
+                )
+            except Exception:
+                # Fallback: tentar autodetect de separador (caso a primeira linha engane)
+                df = pd.read_csv(
+                    BytesIO(conteudo_bruto),
+                    sep=None,
+                    encoding=encoding_usado,
+                    dtype=str,
+                    engine="python",
+                    keep_default_na=False,
+                    on_bad_lines="skip",
+                )
 
-            if len(linhas) < 2:
-                raise DataValidationError("Arquivo CSV vazio ou sem dados.")
-
-            # Extrair cabecalho
-            cabecalho = [col.strip().strip('"').strip("'") for col in linhas[0].split(separador)]
-
-            # Processar dados
-            dados = []
-            for i, linha in enumerate(linhas[1:], start=2):
-                if not linha.strip():
-                    continue
-                valores = [val.strip().strip('"').strip("'") for val in linha.split(separador)]
-
-                # Ajustar numero de colunas se necessario
-                if len(valores) < len(cabecalho):
-                    valores.extend([''] * (len(cabecalho) - len(valores)))
-                elif len(valores) > len(cabecalho):
-                    valores = valores[:len(cabecalho)]
-
-                dados.append(valores)
-
-            # Criar DataFrame
-            df = pd.DataFrame(dados, columns=cabecalho)
-
-            # Converter tudo para string
+            # Garantir string
             df = df.astype(str)
         else:
             raise DataValidationError(
