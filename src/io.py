@@ -318,8 +318,12 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
             except Exception as e:
                 # Tentar corrigir CSV automaticamente
                 try:
-                    from .constants import VENDAS_COL_NOME_PRODUTO
-                    csv_corrigido_bytes, relatorio = corrigir_csv(conteudo_bruto, VENDAS_COL_NOME_PRODUTO)
+                    # Detectar primeira coluna para usar como target (pode ser qualquer CSV)
+                    primeira_linha = conteudo_texto.splitlines()[0]
+                    header_cols = primeira_linha.split(separador)
+                    target_col = header_cols[0].strip() if header_cols else "NomeProduto"
+                    
+                    csv_corrigido_bytes, relatorio = corrigir_csv(conteudo_bruto, target_col)
                     
                     # Tentar ler o CSV corrigido
                     df = pd.read_csv(
