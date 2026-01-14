@@ -389,7 +389,8 @@ def criar_grafico_barras_setores(df_setor_ciclo, top_n=10):
         'ValorTotal': 'sum'
     }).reset_index()
 
-    df_top = df_agg.nlargest(top_n, 'ValorTotal')
+    # Ordenar do menor para maior (para que o maior fique no topo do grafico horizontal)
+    df_top = df_agg.nlargest(top_n, 'ValorTotal').sort_values('ValorTotal', ascending=True)
 
     fig = go.Figure()
 

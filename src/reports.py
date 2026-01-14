@@ -280,6 +280,13 @@ def calcular_estatisticas_ciclo(df_setor_ciclo: pd.DataFrame) -> pd.DataFrame:
         axis=1
     )
 
+    # Ordenar por ciclo
+    agg = agg.sort_values(VENDAS_COL_CICLO)
+
+    # Formatar valores
+    agg['ItensTotal'] = agg['ItensTotal'].apply(lambda x: f"{x:,.0f}".replace(',', '.'))
+    agg['ValorTotal'] = agg['ValorTotal'].apply(lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
+
     # Renomear
     agg = agg.rename(columns={
         VENDAS_COL_CICLO: 'Ciclo',
