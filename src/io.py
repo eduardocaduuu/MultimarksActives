@@ -11,7 +11,7 @@ Este modulo contem:
 import re
 import csv
 import json
-from typing import Tuple, List, Optional, Set, Dict, Any
+from typing import Tuple, List, Optional, Set, Dict, Any, Union
 from io import BytesIO, StringIO
 
 import pandas as pd
@@ -33,6 +33,7 @@ from .constants import (
     SKU_MIN_DIGITOS,
     SKU_MAX_DIGITOS,
 )
+from .csv_fix import fix_broken_csv_bytes
 
 
 class DataValidationError(Exception):
@@ -254,16 +255,17 @@ def corrigir_csv(raw: bytes, target_col: str = "NomeProduto") -> Tuple[bytes, Di
     return csv_corrigido, report
 
 
-def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
+def ler_arquivo(arquivo: BytesIO, nome_arquivo: str, return_report: bool = False) -> Union[pd.DataFrame, Tuple[pd.DataFrame, Optional[Dict[str, Any]], Optional[bytes]]]:
     """
     Le um arquivo Excel ou CSV e retorna um DataFrame.
 
     Args:
         arquivo: Buffer do arquivo carregado
         nome_arquivo: Nome do arquivo para detectar extensao
+        return_report: Se True, retorna também relatório de correção CSV e bytes corrigidos (se aplicável)
 
     Returns:
-        DataFrame com os dados do arquivo
+        DataFrame com os dados do arquivo, ou tupla (DataFrame, relatorio, bytes_corrigidos) se return_report=True
 
     Raises:
         DataValidationError: Se o formato do arquivo nao for suportado
@@ -279,37 +281,37 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
             arquivo.seek(0)
             conteudo_bruto = arquivo.read()
 
-            # Detectar encoding
-            conteudo_texto = None
-            encoding_usado = None
-            for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'iso-8859-1', 'windows-1252']:
-                try:
-                    conteudo_texto = conteudo_bruto.decode(enc)
-                    encoding_usado = enc
-                    break
-                except Exception:
-                    continue
-
-            if conteudo_texto is None:
-                raise DataValidationError(
-                    "Nao foi possivel decodificar o arquivo CSV. "
-                    "Tente converter para Excel (.xlsx) antes de enviar."
-                )
-
-            # Detectar separador pela primeira linha
-            primeira_linha = conteudo_texto.splitlines()[0]
-            contagem = {
-                '|': primeira_linha.count('|'),
-                ';': primeira_linha.count(';'),
-                ',': primeira_linha.count(','),
-                '\t': primeira_linha.count('\t')
-            }
-            separador = max(contagem, key=contagem.get)
-            if contagem[separador] == 0:
-                separador = ','
-
-            # Usar pandas para ler de forma robusta (respeita aspas, campos com separador, etc)
+            # Tentar ler CSV diretamente primeiro
             try:
+                # Detectar encoding e separador para tentativa inicial
+                encoding_usado = None
+                for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'iso-8859-1', 'windows-1252']:
+                    try:
+                        conteudo_bruto.decode(enc)
+                        encoding_usado = enc
+                        break
+                    except Exception:
+                        continue
+                
+                if encoding_usado is None:
+                    raise DataValidationError(
+                        "Nao foi possivel decodificar o arquivo CSV. "
+                        "Tente converter para Excel (.xlsx) antes de enviar."
+                    )
+                
+                # Detectar separador pela primeira linha
+                primeira_linha = conteudo_bruto.decode(encoding_usado, errors='replace').splitlines()[0]
+                contagem = {
+                    '|': primeira_linha.count('|'),
+                    ';': primeira_linha.count(';'),
+                    ',': primeira_linha.count(','),
+                    '\t': primeira_linha.count('\t')
+                }
+                separador = max(contagem, key=contagem.get)
+                if contagem[separador] == 0:
+                    separador = ','
+                
+                # Tentar ler diretamente
                 df = pd.read_csv(
                     BytesIO(conteudo_bruto),
                     sep=separador,
@@ -318,23 +320,22 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
                     engine="python",
                     quotechar='"',
                     keep_default_na=False,
-                    on_bad_lines="error"  # NÃO pula linha - garante integridade dos dados
+                    on_bad_lines="error"
                 )
-            except Exception as e:
-                # Tentar corrigir CSV automaticamente
+            except Exception:
+                # CSV quebrado - tentar corrigir automaticamente
+                csv_fix_report = None
+                csv_fixed_bytes = None
                 try:
-                    # Detectar primeira coluna para usar como target (pode ser qualquer CSV)
-                    primeira_linha = conteudo_texto.splitlines()[0]
-                    header_cols = primeira_linha.split(separador)
-                    target_col = header_cols[0].strip() if header_cols else "NomeProduto"
-                    
-                    csv_corrigido_bytes, relatorio = corrigir_csv(conteudo_bruto, target_col)
+                    csv_corrigido_bytes, relatorio = fix_broken_csv_bytes(conteudo_bruto, sep=separador if 'separador' in locals() else None)
+                    csv_fix_report = relatorio
+                    csv_fixed_bytes = csv_corrigido_bytes
                     
                     # Tentar ler o CSV corrigido
                     df = pd.read_csv(
                         BytesIO(csv_corrigido_bytes),
                         sep=relatorio["separator"],
-                        encoding=relatorio["encoding"],
+                        encoding="utf-8",  # CSV corrigido sempre em UTF-8
                         dtype=str,
                         engine="python",
                         quotechar='"',
@@ -343,21 +344,27 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
                     )
                 except Exception as e2:
                     raise DataValidationError(
-                        "Erro ao importar CSV. "
-                        "O arquivo possui linhas inconsistentes (ex: separador dentro do texto, aspas quebradas ou colunas a mais).\n\n"
+                        "CSV inválido estruturalmente. "
+                        "O arquivo possui linhas inconsistentes que não puderam ser corrigidas automaticamente.\n\n"
                         "👉 Nenhuma linha foi descartada.\n"
-                        "👉 Corrija o CSV ou converta para Excel (.xlsx).\n\n"
+                        "👉 Use Excel (.xlsx) ou exporte o CSV novamente da plataforma.\n\n"
                         f"Detalhe técnico: {str(e2)[:300]}"
                     )
 
             # Garantir string
             df = df.astype(str)
+            
+            # Retornar relatório se solicitado
+            if return_report:
+                return df, csv_fix_report, csv_fixed_bytes
         else:
             raise DataValidationError(
                 f"Formato de arquivo nao suportado: {nome_arquivo}. "
                 "Use .xlsx, .xls ou .csv"
             )
 
+        if return_report:
+            return df, None, None
         return df
 
     except Exception as e:

@@ -704,11 +704,59 @@ def main():
             with st.spinner("⏳ Processando dados..."):
                 try:
                     vendas_bytes = arquivo_vendas.getvalue()
+                    
+                    # Verificar se é CSV e capturar relatório de correção
+                    csv_fix_report = None
+                    csv_fixed_bytes = None
+                    if arquivo_vendas.name.lower().endswith('.csv'):
+                        from src.io import ler_arquivo
+                        vendas_buffer = BytesIO(vendas_bytes)
+                        _, csv_fix_report, csv_fixed_bytes = ler_arquivo(vendas_buffer, arquivo_vendas.name, return_report=True)
+                        vendas_buffer.seek(0)  # Reset para processar_vendas usar
+                    
                     dados = processar_vendas_cached(vendas_bytes, arquivo_vendas.name, df_bd)
                     dados['avisos'] = [f"[BD] {a}" for a in avisos_bd] + dados['avisos']
                     dados['df_bd'] = df_bd
+                    dados['csv_fix_report'] = csv_fix_report
+                    dados['csv_fixed_bytes'] = csv_fixed_bytes
                     st.session_state['dados_processados'] = dados
                     st.success("✅ Dados processados com sucesso!")
+                    
+                    # Mostrar aviso de correção CSV se houver
+                    if csv_fix_report and csv_fix_report.get('stats', {}).get('joined_broken_records', 0) + csv_fix_report.get('stats', {}).get('fixed_extra_cols', 0) + csv_fix_report.get('stats', {}).get('fixed_missing_cols', 0) > 0:
+                        stats = csv_fix_report['stats']
+                        joined = stats.get('joined_broken_records', 0)
+                        extra = stats.get('fixed_extra_cols', 0)
+                        missing = stats.get('fixed_missing_cols', 0)
+                        total_fixes = joined + extra + missing
+                        
+                        st.warning(
+                            f"📝 CSV corrigido automaticamente: {joined} registros reconstruídos, "
+                            f"{extra + missing} linhas ajustadas. Baixe o relatório para auditoria."
+                        )
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.download_button(
+                                "📥 Baixar CSV Corrigido",
+                                data=csv_fixed_bytes,
+                                file_name=arquivo_vendas.name.replace('.csv', '_corrigido.csv'),
+                                mime="text/csv",
+                                use_container_width=True
+                            )
+                        with col2:
+                            import json
+                            report_json = json.dumps(csv_fix_report, ensure_ascii=False, indent=2)
+                            st.download_button(
+                                "📥 Baixar Relatório JSON",
+                                data=report_json.encode('utf-8'),
+                                file_name=arquivo_vendas.name.replace('.csv', '_relatorio_correcao.json'),
+                                mime="application/json",
+                                use_container_width=True
+                            )
+                    elif csv_fix_report:
+                        st.info("✅ CSV validado sem ajustes.")
+                        
                 except DataValidationError as e:
                     st.error(f"❌ Erro de validacao: {str(e)}")
                     return
