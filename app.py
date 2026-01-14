@@ -996,11 +996,26 @@ def main():
 
             if lista_clientes:
                 opcoes = {c['label']: c['id'] for c in lista_clientes}
+                opcoes_lista = list(opcoes.keys())
+
+                # Inicializar estado se nao existir
+                if 'cliente_selecionado_idx' not in st.session_state:
+                    st.session_state.cliente_selecionado_idx = 0
+
+                # Garantir que o indice esta dentro do range
+                if st.session_state.cliente_selecionado_idx >= len(opcoes_lista):
+                    st.session_state.cliente_selecionado_idx = 0
 
                 cliente_selecionado_label = st.selectbox(
                     "🔍 Selecione um cliente",
-                    options=list(opcoes.keys())
+                    options=opcoes_lista,
+                    index=st.session_state.cliente_selecionado_idx,
+                    key="select_cliente"
                 )
+
+                # Atualizar o indice no estado
+                if cliente_selecionado_label in opcoes_lista:
+                    st.session_state.cliente_selecionado_idx = opcoes_lista.index(cliente_selecionado_label)
 
                 if cliente_selecionado_label:
                     cliente_id = opcoes[cliente_selecionado_label]
