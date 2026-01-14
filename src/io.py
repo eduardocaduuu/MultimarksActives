@@ -127,11 +127,18 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
                 for sep in separadores:
                     try:
                         arquivo.seek(0)
-                        df_temp = pd.read_csv(arquivo, encoding=encoding, sep=sep)
+                        # Usar on_bad_lines para lidar com linhas inconsistentes
+                        df_temp = pd.read_csv(
+                            arquivo,
+                            encoding=encoding,
+                            sep=sep,
+                            on_bad_lines='skip',  # Ignorar linhas com numero errado de campos
+                            dtype=str  # Ler tudo como string para evitar erros de tipo
+                        )
 
                         # Verificar se o CSV foi lido corretamente
-                        # Se tiver apenas 1 coluna e muitos valores, provavelmente o separador esta errado
-                        if len(df_temp.columns) > 1:
+                        # Se tiver apenas 1 coluna, provavelmente o separador esta errado
+                        if len(df_temp.columns) > 3:
                             df = df_temp
                             break
                     except Exception as e:
@@ -142,15 +149,29 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
                     break
 
             # Se nenhuma combinacao funcionou com multiplas colunas, tentar deteccao automatica
-            if df is None or len(df.columns) <= 1:
+            if df is None or len(df.columns) <= 3:
                 arquivo.seek(0)
                 try:
                     # Tentar com deteccao automatica de separador
-                    df = pd.read_csv(arquivo, encoding='utf-8-sig', sep=None, engine='python')
+                    df = pd.read_csv(
+                        arquivo,
+                        encoding='utf-8-sig',
+                        sep=None,
+                        engine='python',
+                        on_bad_lines='skip',
+                        dtype=str
+                    )
                 except Exception:
                     arquivo.seek(0)
                     try:
-                        df = pd.read_csv(arquivo, encoding='latin-1', sep=None, engine='python')
+                        df = pd.read_csv(
+                            arquivo,
+                            encoding='latin-1',
+                            sep=None,
+                            engine='python',
+                            on_bad_lines='skip',
+                            dtype=str
+                        )
                     except Exception as e:
                         raise DataValidationError(
                             f"Nao foi possivel ler o arquivo CSV. "
