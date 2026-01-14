@@ -116,9 +116,9 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
         elif nome_lower.endswith('.csv'):
             # Tentar diferentes combinacoes de encoding e separador
             # Comum em arquivos brasileiros: UTF-8 com BOM, Latin-1, CP1252
-            # Separadores: virgula (,) ou ponto e virgula (;)
-            encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
-            separadores = [',', ';']
+            # Separadores: pipe (|), virgula (,) ou ponto e virgula (;)
+            encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+            separadores = ['|', ',', ';', '\t']
 
             df = None
             ultimo_erro = None
