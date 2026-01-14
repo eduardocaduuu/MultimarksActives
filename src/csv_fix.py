@@ -119,10 +119,12 @@ def fix_broken_csv_bytes(raw: bytes, *, sep: Optional[str] = None) -> Tuple[byte
     }
     
     # 6. Usar csv.writer para escrever CSV corrigido corretamente
+    # QUOTE_MINIMAL coloca aspas apenas quando necessário (ex: campo contém |)
     output = StringIO()
     writer = csv.writer(
         output,
         delimiter=separator,
+        quotechar='"',
         quoting=csv.QUOTE_MINIMAL,
         lineterminator='\n'
     )

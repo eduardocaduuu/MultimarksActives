@@ -167,8 +167,9 @@ def corrigir_csv(raw: bytes, target_col: str = "NomeProduto") -> Tuple[bytes, Di
     }
 
     # Usar StringIO e csv.writer para escrever CSV corrigido corretamente
+    # QUOTE_MINIMAL coloca aspas apenas quando necessário (ex: campo contém separador)
     output = StringIO()
-    writer = csv.writer(output, delimiter=sep, quoting=csv.QUOTE_MINIMAL, lineterminator='\n')
+    writer = csv.writer(output, delimiter=sep, quotechar='"', quoting=csv.QUOTE_MINIMAL, lineterminator='\n')
     
     # Escrever header
     writer.writerow(header)
@@ -259,6 +260,11 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str, return_report: bool = False
     """
     Le um arquivo Excel ou CSV e retorna um DataFrame.
 
+    Para CSVs pipe-delimitados:
+    1. Pré-processa reconstruindo registros quebrados (linhas que começam com |)
+    2. Regrava usando csv.writer com QUOTE_MINIMAL para proteger valores com |
+    3. Lê com pd.read_csv(..., sep="|", dtype=str, engine="python")
+
     Args:
         arquivo: Buffer do arquivo carregado
         nome_arquivo: Nome do arquivo para detectar extensao
@@ -275,97 +281,129 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str, return_report: bool = False
     try:
         if nome_lower.endswith('.xlsx') or nome_lower.endswith('.xls'):
             # Usar openpyxl para xlsx, xlrd para xls antigo
+            # Leitura Excel inalterada
             engine = 'openpyxl' if nome_lower.endswith('.xlsx') else None
-            df = pd.read_excel(arquivo, engine=engine)
+            df = pd.read_excel(arquivo, engine=engine, dtype=str)
+            df = df.astype(str)
+
+            if return_report:
+                return df, None, None
+            return df
+
         elif nome_lower.endswith('.csv'):
             arquivo.seek(0)
             conteudo_bruto = arquivo.read()
 
-            # Tentar ler CSV diretamente primeiro
-            try:
-                # Detectar encoding e separador para tentativa inicial
-                encoding_usado = None
-                for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'iso-8859-1', 'windows-1252']:
-                    try:
-                        conteudo_bruto.decode(enc)
-                        encoding_usado = enc
-                        break
-                    except Exception:
-                        continue
-                
-                if encoding_usado is None:
-                    raise DataValidationError(
-                        "Nao foi possivel decodificar o arquivo CSV. "
-                        "Tente converter para Excel (.xlsx) antes de enviar."
-                    )
-                
-                # Detectar separador pela primeira linha
-                primeira_linha = conteudo_bruto.decode(encoding_usado, errors='replace').splitlines()[0]
-                contagem = {
-                    '|': primeira_linha.count('|'),
-                    ';': primeira_linha.count(';'),
-                    ',': primeira_linha.count(','),
-                    '\t': primeira_linha.count('\t')
-                }
-                separador = max(contagem, key=contagem.get)
-                if contagem[separador] == 0:
-                    separador = ','
-                
-                # Tentar ler diretamente
-                df = pd.read_csv(
-                    BytesIO(conteudo_bruto),
-                    sep=separador,
-                    encoding=encoding_usado,
-                    dtype=str,
-                    engine="python",
-                    quotechar='"',
-                    keep_default_na=False,
-                    on_bad_lines="error"
-                )
-            except Exception:
-                # CSV quebrado - tentar corrigir automaticamente
-                csv_fix_report = None
-                csv_fixed_bytes = None
+            csv_fix_report = None
+            csv_fixed_bytes = None
+
+            # 1. Detectar encoding
+            encoding_usado = None
+            for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'iso-8859-1', 'windows-1252']:
                 try:
-                    csv_corrigido_bytes, relatorio = fix_broken_csv_bytes(conteudo_bruto, sep=separador if 'separador' in locals() else None)
+                    conteudo_bruto.decode(enc)
+                    encoding_usado = enc
+                    break
+                except Exception:
+                    continue
+
+            if encoding_usado is None:
+                raise DataValidationError(
+                    "Nao foi possivel decodificar o arquivo CSV. "
+                    "Tente converter para Excel (.xlsx) antes de enviar."
+                )
+
+            # 2. Detectar separador pela primeira linha
+            primeira_linha = conteudo_bruto.decode(encoding_usado, errors='replace').splitlines()[0]
+            contagem = {
+                '|': primeira_linha.count('|'),
+                ';': primeira_linha.count(';'),
+                ',': primeira_linha.count(','),
+                '\t': primeira_linha.count('\t')
+            }
+            separador = max(contagem, key=contagem.get)
+            if contagem[separador] == 0:
+                separador = ','
+
+            # 3. Para CSV pipe-delimitado, SEMPRE pré-processar para reconstruir registros quebrados
+            if separador == '|':
+                # Pré-processamento obrigatório para CSV pipe-delimitado
+                try:
+                    csv_corrigido_bytes, relatorio = fix_broken_csv_bytes(conteudo_bruto, sep='|')
                     csv_fix_report = relatorio
                     csv_fixed_bytes = csv_corrigido_bytes
-                    
-                    # Tentar ler o CSV corrigido
+
+                    # Ler o CSV pré-processado
                     df = pd.read_csv(
                         BytesIO(csv_corrigido_bytes),
-                        sep=relatorio["separator"],
-                        encoding="utf-8",  # CSV corrigido sempre em UTF-8
+                        sep='|',
+                        encoding='utf-8',  # CSV corrigido sempre em UTF-8
                         dtype=str,
-                        engine="python",
+                        engine='python',
                         quotechar='"',
                         keep_default_na=False,
-                        on_bad_lines="error"
+                        on_bad_lines='warn'
                     )
-                except Exception as e2:
+                except Exception as e:
                     raise DataValidationError(
-                        "CSV inválido estruturalmente. "
+                        "CSV pipe-delimitado inválido. "
                         "O arquivo possui linhas inconsistentes que não puderam ser corrigidas automaticamente.\n\n"
                         "👉 Nenhuma linha foi descartada.\n"
                         "👉 Use Excel (.xlsx) ou exporte o CSV novamente da plataforma.\n\n"
-                        f"Detalhe técnico: {str(e2)[:300]}"
+                        f"Detalhe técnico: {str(e)[:300]}"
                     )
+            else:
+                # Para outros separadores, tentar ler diretamente primeiro
+                try:
+                    df = pd.read_csv(
+                        BytesIO(conteudo_bruto),
+                        sep=separador,
+                        encoding=encoding_usado,
+                        dtype=str,
+                        engine='python',
+                        quotechar='"',
+                        keep_default_na=False,
+                        on_bad_lines='error'
+                    )
+                except Exception:
+                    # CSV quebrado - tentar corrigir automaticamente
+                    try:
+                        csv_corrigido_bytes, relatorio = fix_broken_csv_bytes(conteudo_bruto, sep=separador)
+                        csv_fix_report = relatorio
+                        csv_fixed_bytes = csv_corrigido_bytes
+
+                        # Tentar ler o CSV corrigido
+                        df = pd.read_csv(
+                            BytesIO(csv_corrigido_bytes),
+                            sep=relatorio["separator"],
+                            encoding='utf-8',  # CSV corrigido sempre em UTF-8
+                            dtype=str,
+                            engine='python',
+                            quotechar='"',
+                            keep_default_na=False,
+                            on_bad_lines='warn'
+                        )
+                    except Exception as e2:
+                        raise DataValidationError(
+                            "CSV inválido estruturalmente. "
+                            "O arquivo possui linhas inconsistentes que não puderam ser corrigidas automaticamente.\n\n"
+                            "👉 Nenhuma linha foi descartada.\n"
+                            "👉 Use Excel (.xlsx) ou exporte o CSV novamente da plataforma.\n\n"
+                            f"Detalhe técnico: {str(e2)[:300]}"
+                        )
 
             # Garantir string
             df = df.astype(str)
-            
+
             # Retornar relatório se solicitado
             if return_report:
                 return df, csv_fix_report, csv_fixed_bytes
+            return df
         else:
             raise DataValidationError(
                 f"Formato de arquivo nao suportado: {nome_arquivo}. "
                 "Use .xlsx, .xls ou .csv"
             )
-
-        if return_report:
-            return df, None, None
-        return df
 
     except Exception as e:
         if isinstance(e, DataValidationError):
@@ -618,13 +656,23 @@ def carregar_bd_produtos_local(caminho: str = "data/bd_produtos.csv") -> Tuple[p
             f"Arquivo BD Produtos nao encontrado: {caminho}"
         )
 
-    # Ler CSV com diferentes encodings
+    # Ler CSV com separador vírgula, dtype=str para preservar SKUs como string
     df = None
     for encoding in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
         try:
-            df = pd.read_csv(caminho, encoding=encoding)
+            df = pd.read_csv(
+                caminho,
+                encoding=encoding,
+                sep=',',  # bd_produtos.csv usa vírgula como separador
+                dtype=str,  # Ler tudo como string para preservar zeros à esquerda
+                keep_default_na=False,  # Não converter valores vazios para NaN
+                engine='python',
+                quotechar='"'
+            )
             break
         except UnicodeDecodeError:
+            continue
+        except Exception:
             continue
 
     if df is None:
