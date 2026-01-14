@@ -316,13 +316,30 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
                     on_bad_lines="error"  # NÃO pula linha - garante integridade dos dados
                 )
             except Exception as e:
-                raise DataValidationError(
-                    "Erro ao importar CSV. "
-                    "O arquivo possui linhas inconsistentes (ex: separador dentro do texto, aspas quebradas ou colunas a mais).\n\n"
-                    "👉 Nenhuma linha foi descartada.\n"
-                    "👉 Corrija o CSV ou converta para Excel (.xlsx).\n\n"
-                    f"Detalhe técnico: {str(e)[:300]}"
-                )
+                # Tentar corrigir CSV automaticamente
+                try:
+                    from .constants import VENDAS_COL_NOME_PRODUTO
+                    csv_corrigido_bytes, relatorio = corrigir_csv(conteudo_bruto, VENDAS_COL_NOME_PRODUTO)
+                    
+                    # Tentar ler o CSV corrigido
+                    df = pd.read_csv(
+                        BytesIO(csv_corrigido_bytes),
+                        sep=relatorio["separator"],
+                        encoding=relatorio["encoding"],
+                        dtype=str,
+                        engine="python",
+                        quotechar='"',
+                        keep_default_na=False,
+                        on_bad_lines="error"
+                    )
+                except Exception as e2:
+                    raise DataValidationError(
+                        "Erro ao importar CSV. "
+                        "O arquivo possui linhas inconsistentes (ex: separador dentro do texto, aspas quebradas ou colunas a mais).\n\n"
+                        "👉 Nenhuma linha foi descartada.\n"
+                        "👉 Corrija o CSV ou converta para Excel (.xlsx).\n\n"
+                        f"Detalhe técnico: {str(e)[:300]}"
+                    )
 
             # Garantir string
             df = df.astype(str)

@@ -13,6 +13,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from io import BytesIO
+import json
 
 # Importar modulos do projeto
 from src.constants import (
@@ -29,6 +30,7 @@ from src.io import (
     processar_bd_produtos,
     processar_vendas,
     carregar_bd_produtos_local,
+    corrigir_csv,
     DataValidationError,
 )
 from src.transform import (
