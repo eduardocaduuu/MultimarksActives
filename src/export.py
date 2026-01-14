@@ -43,13 +43,20 @@ def exportar_excel(df: pd.DataFrame, nome_aba: str = "Dados") -> bytes:
         # Ajustar largura das colunas automaticamente
         worksheet = writer.sheets[nome_aba]
         for idx, col in enumerate(df.columns):
-            max_length = max(
-                df[col].astype(str).map(len).max(),
-                len(str(col))
-            ) + 2
-            # Limitar largura maxima
-            max_length = min(max_length, 50)
-            worksheet.column_dimensions[chr(65 + idx)].width = max_length
+            # Calcular largura baseada no conteudo
+            if len(df) > 0:
+                max_content = df[col].astype(str).map(len).max()
+            else:
+                max_content = 0
+
+            max_length = max(max_content, len(str(col))) + 2
+
+            # Limitar largura maxima e minima
+            max_length = max(min(max_length, 50), 10)
+
+            # Usar get_column_letter para suportar mais de 26 colunas
+            col_letter = get_column_letter(idx + 1)
+            worksheet.column_dimensions[col_letter].width = max_length
 
     return output.getvalue()
 

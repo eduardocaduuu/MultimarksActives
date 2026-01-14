@@ -25,6 +25,20 @@ from .constants import (
 )
 
 
+def formatar_moeda_br(valor) -> str:
+    """Formata valor como moeda brasileira (R$ 1.234,56)."""
+    if pd.isna(valor):
+        return "R$ 0,00"
+    return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+
+def formatar_numero_br(valor) -> str:
+    """Formata numero com separador de milhar brasileiro (1.234)."""
+    if pd.isna(valor):
+        return "0"
+    return f"{valor:,.0f}".replace(',', '.')
+
+
 def formatar_tabela_setor_ciclo(df: pd.DataFrame) -> pd.DataFrame:
     """
     Formata a tabela de ativos por setor e ciclo para exibicao.
@@ -47,6 +61,14 @@ def formatar_tabela_setor_ciclo(df: pd.DataFrame) -> pd.DataFrame:
         df_fmt.loc[mask_setor, 'ItensTotal'] = 0
         df_fmt.loc[mask_setor, 'ValorTotal'] = 0
 
+    # Ordenar por ciclo e setor antes de formatar
+    if VENDAS_COL_CICLO in df_fmt.columns:
+        df_fmt = df_fmt.sort_values([VENDAS_COL_CICLO, VENDAS_COL_SETOR])
+
+    # Formatar valores numericos
+    df_fmt['ItensTotal'] = df_fmt['ItensTotal'].apply(formatar_numero_br)
+    df_fmt['ValorTotal'] = df_fmt['ValorTotal'].apply(formatar_moeda_br)
+
     # Renomear colunas para exibicao
     colunas_renomear = {
         VENDAS_COL_CICLO: 'Ciclo',
@@ -59,10 +81,6 @@ def formatar_tabela_setor_ciclo(df: pd.DataFrame) -> pd.DataFrame:
     }
 
     df_fmt = df_fmt.rename(columns=colunas_renomear)
-
-    # Ordenar por ciclo e setor
-    if 'Ciclo' in df_fmt.columns:
-        df_fmt = df_fmt.sort_values(['Ciclo', 'Setor'])
 
     return df_fmt
 
@@ -95,6 +113,16 @@ def formatar_tabela_multimarcas(df_clientes: pd.DataFrame) -> pd.DataFrame:
     colunas_disponiveis = [c for c in colunas if c in df_multi.columns]
     df_fmt = df_multi[colunas_disponiveis].copy()
 
+    # Ordenar antes de formatar (para ordenacao numerica correta)
+    if VENDAS_COL_CICLO in df_fmt.columns and 'ValorTotal' in df_fmt.columns:
+        df_fmt = df_fmt.sort_values([VENDAS_COL_CICLO, 'ValorTotal'], ascending=[True, False])
+
+    # Formatar valores numericos
+    if 'ItensTotal' in df_fmt.columns:
+        df_fmt['ItensTotal'] = df_fmt['ItensTotal'].apply(formatar_numero_br)
+    if 'ValorTotal' in df_fmt.columns:
+        df_fmt['ValorTotal'] = df_fmt['ValorTotal'].apply(formatar_moeda_br)
+
     # Renomear colunas
     colunas_renomear = {
         VENDAS_COL_CICLO: 'Ciclo',
@@ -108,10 +136,6 @@ def formatar_tabela_multimarcas(df_clientes: pd.DataFrame) -> pd.DataFrame:
     }
 
     df_fmt = df_fmt.rename(columns=colunas_renomear)
-
-    # Ordenar
-    if 'Ciclo' in df_fmt.columns:
-        df_fmt = df_fmt.sort_values(['Ciclo', 'Valor Total'], ascending=[True, False])
 
     return df_fmt
 
