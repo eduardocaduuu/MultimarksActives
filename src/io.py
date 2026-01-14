@@ -156,20 +156,16 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
                     dtype=str,
                     engine="python",
                     quotechar='"',
-                    quoting=csv.QUOTE_MINIMAL,
                     keep_default_na=False,
-                    on_bad_lines="skip",  # Pula linhas com problemas
+                    on_bad_lines="error"  # NÃO pula linha - garante integridade dos dados
                 )
-            except Exception:
-                # Fallback: tentar autodetect de separador (caso a primeira linha engane)
-                df = pd.read_csv(
-                    BytesIO(conteudo_bruto),
-                    sep=None,
-                    encoding=encoding_usado,
-                    dtype=str,
-                    engine="python",
-                    keep_default_na=False,
-                    on_bad_lines="skip",
+            except Exception as e:
+                raise DataValidationError(
+                    "Erro ao importar CSV. "
+                    "O arquivo possui linhas inconsistentes (ex: separador dentro do texto, aspas quebradas ou colunas a mais).\n\n"
+                    "👉 Nenhuma linha foi descartada.\n"
+                    "👉 Corrija o CSV ou converta para Excel (.xlsx).\n\n"
+                    f"Detalhe técnico: {str(e)[:300]}"
                 )
 
             # Garantir string
