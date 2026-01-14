@@ -597,6 +597,35 @@ def main():
 
         st.markdown("---")
 
+        # Conversor CSV para Excel
+        st.markdown("### 🔄 Conversor CSV → Excel")
+        arquivo_csv = st.file_uploader(
+            "📄 Arquivo CSV",
+            type=['csv'],
+            key='csv_converter',
+            help="Faça upload de um arquivo CSV para converter em Excel"
+        )
+        
+        if arquivo_csv is not None:
+            try:
+                # Ler CSV
+                df_csv = pd.read_csv(arquivo_csv)
+                st.success(f"✅ CSV carregado: {len(df_csv)} linhas, {len(df_csv.columns)} colunas")
+                
+                # Botão de download Excel
+                excel_bytes = exportar_excel(df_csv, "Dados")
+                st.download_button(
+                    "📥 Baixar como Excel",
+                    data=excel_bytes,
+                    file_name=arquivo_csv.name.replace('.csv', '.xlsx'),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"❌ Erro ao processar CSV: {str(e)}")
+
+        st.markdown("---")
+
         # Upload
         arquivo_vendas = st.file_uploader(
             "📤 Planilha de Vendas",

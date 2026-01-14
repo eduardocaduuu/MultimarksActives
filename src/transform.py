@@ -279,8 +279,8 @@ def calcular_metricas_gerais(
         (total_multimarcas / total_ativos * 100) if total_ativos > 0 else 0
     )
 
-    total_itens = df_vendas_filtrado[VENDAS_COL_QTD_ITENS].sum()
-    total_valor = df_vendas_filtrado[VENDAS_COL_VALOR].sum()
+    total_itens = float(df_vendas_filtrado[VENDAS_COL_QTD_ITENS].sum())
+    total_valor = float(df_vendas_filtrado[VENDAS_COL_VALOR].sum())
 
     return {
         'total_ativos': total_ativos,
