@@ -114,51 +114,85 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
             engine = 'openpyxl' if nome_lower.endswith('.xlsx') else None
             df = pd.read_excel(arquivo, engine=engine)
         elif nome_lower.endswith('.csv'):
-            # Tentar diferentes combinacoes de encoding e separador
-            # Comum em arquivos brasileiros: UTF-8 com BOM, Latin-1, CP1252
-            # Separadores: pipe (|), virgula (,) ou ponto e virgula (;)
-            encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
-            separadores = ['|', ',', ';', '\t']
+            # Primeiro, detectar o separador lendo a primeira linha
+            arquivo.seek(0)
+            primeira_linha = arquivo.readline()
+
+            # Tentar decodificar a primeira linha para detectar separador
+            separador_detectado = None
+            encoding_detectado = None
+
+            for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'iso-8859-1']:
+                try:
+                    linha_str = primeira_linha.decode(enc) if isinstance(primeira_linha, bytes) else primeira_linha
+                    # Contar ocorrencias de cada separador
+                    contagem = {
+                        '|': linha_str.count('|'),
+                        ';': linha_str.count(';'),
+                        ',': linha_str.count(','),
+                        '\t': linha_str.count('\t')
+                    }
+                    # O separador mais frequente provavelmente e o correto
+                    separador_detectado = max(contagem, key=contagem.get)
+                    if contagem[separador_detectado] > 0:
+                        encoding_detectado = enc
+                        break
+                except Exception:
+                    continue
 
             df = None
             ultimo_erro = None
 
-            for encoding in encodings:
-                for sep in separadores:
-                    try:
-                        arquivo.seek(0)
-                        # Usar on_bad_lines para lidar com linhas inconsistentes
-                        df_temp = pd.read_csv(
-                            arquivo,
-                            encoding=encoding,
-                            sep=sep,
-                            on_bad_lines='skip',  # Ignorar linhas com numero errado de campos
-                            dtype=str  # Ler tudo como string para evitar erros de tipo
-                        )
+            # Se detectou separador, tentar primeiro com ele
+            if separador_detectado and encoding_detectado:
+                try:
+                    arquivo.seek(0)
+                    df = pd.read_csv(
+                        arquivo,
+                        encoding=encoding_detectado,
+                        sep=separador_detectado,
+                        dtype=str
+                    )
+                except Exception as e:
+                    ultimo_erro = e
+                    df = None
 
-                        # Verificar se o CSV foi lido corretamente
-                        # Se tiver apenas 1 coluna, provavelmente o separador esta errado
-                        if len(df_temp.columns) > 3:
-                            df = df_temp
-                            break
-                    except Exception as e:
-                        ultimo_erro = e
-                        continue
+            # Se nao funcionou, tentar todas as combinacoes
+            if df is None:
+                encodings = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+                separadores = ['|', ';', ',', '\t']
 
-                if df is not None:
-                    break
+                for encoding in encodings:
+                    for sep in separadores:
+                        try:
+                            arquivo.seek(0)
+                            df_temp = pd.read_csv(
+                                arquivo,
+                                encoding=encoding,
+                                sep=sep,
+                                dtype=str
+                            )
 
-            # Se nenhuma combinacao funcionou com multiplas colunas, tentar deteccao automatica
-            if df is None or len(df.columns) <= 3:
+                            # Verificar se o CSV foi lido corretamente
+                            if len(df_temp.columns) > 3 and len(df_temp) > 0:
+                                df = df_temp
+                                break
+                        except Exception as e:
+                            ultimo_erro = e
+                            continue
+
+                    if df is not None:
+                        break
+
+            # Se ainda nao funcionou, tentar deteccao automatica do pandas
+            if df is None:
                 arquivo.seek(0)
                 try:
-                    # Tentar com deteccao automatica de separador
                     df = pd.read_csv(
                         arquivo,
                         encoding='utf-8-sig',
                         sep=None,
                         engine='python',
-                        on_bad_lines='skip',
                         dtype=str
                     )
                 except Exception:
@@ -169,7 +203,6 @@ def ler_arquivo(arquivo: BytesIO, nome_arquivo: str) -> pd.DataFrame:
                             encoding='latin-1',
                             sep=None,
                             engine='python',
-                            on_bad_lines='skip',
                             dtype=str
                         )
                     except Exception as e:
