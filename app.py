@@ -383,48 +383,57 @@ def criar_grafico_pizza_multimarcas(total_ativos, total_multimarcas):
 
 
 def criar_grafico_barras_setores(df_setor_ciclo, top_n=10):
-    """Cria grafico de barras horizontal para top setores."""
+    """Cria grafico de barras vertical para top setores."""
     df_agg = df_setor_ciclo.groupby(VENDAS_COL_SETOR).agg({
         'ClientesAtivos': 'sum',
         'ValorTotal': 'sum'
     }).reset_index()
 
-    # Ordenar do menor para maior (para que o maior fique no topo do grafico horizontal)
-    df_top = df_agg.nlargest(top_n, 'ValorTotal').sort_values('ValorTotal', ascending=True)
+    # Top N ordenado do maior para menor
+    df_top = df_agg.nlargest(top_n, 'ValorTotal').reset_index(drop=True)
 
     fig = go.Figure()
 
+    # Cores em gradiente
+    cores = [COLORS['primary']] * len(df_top)
+
     fig.add_trace(go.Bar(
-        y=df_top[VENDAS_COL_SETOR],
-        x=df_top['ValorTotal'],
-        orientation='h',
-        marker_color=COLORS['primary'],
+        x=list(range(1, len(df_top) + 1)),
+        y=df_top['ValorTotal'],
+        marker_color=cores,
         marker_line_color=COLORS['secondary'],
         marker_line_width=1,
-        text=[f'R$ {v:,.0f}' for v in df_top['ValorTotal']],
+        text=[f'R$ {v/1000:,.0f}k' for v in df_top['ValorTotal']],
         textposition='outside',
-        textfont=dict(color='white', size=11)
+        textfont=dict(color='white', size=10),
+        hovertemplate='<b>%{customdata}</b><br>R$ %{y:,.2f}<extra></extra>',
+        customdata=df_top[VENDAS_COL_SETOR]
     ))
 
     fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        margin=dict(t=20, b=20, l=20, r=80),
-        height=400,
+        margin=dict(t=30, b=20, l=20, r=20),
+        height=280,
         xaxis=dict(
-            showgrid=True,
-            gridcolor='rgba(255,255,255,0.1)',
-            tickfont=dict(color='white'),
+            showgrid=False,
+            tickfont=dict(color='white', size=11),
+            tickvals=list(range(1, len(df_top) + 1)),
+            ticktext=[f'#{i}' for i in range(1, len(df_top) + 1)],
             title=None
         ),
         yaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(255,255,255,0.1)',
             tickfont=dict(color='white'),
-            title=None
+            title=None,
+            tickformat=',.0f'
         ),
-        showlegend=False
+        showlegend=False,
+        bargap=0.3
     )
 
-    return fig
+    return fig, df_top
 
 
 def criar_grafico_evolucao_ciclos(df_setor_ciclo):
@@ -795,18 +804,35 @@ def main():
 
             st.markdown("---")
 
-            col1, col2 = st.columns(2)
+            # Top 10 Setores com grafico e tabela
+            st.markdown("#### 🏆 Top 10 Setores por Valor")
+            if not df_setor_ciclo_filtrado.empty:
+                fig_setores, df_top_setores = criar_grafico_barras_setores(df_setor_ciclo_filtrado)
 
-            with col1:
-                st.markdown("#### 🏆 Top 10 Setores por Valor")
-                fig_setores = criar_grafico_barras_setores(df_setor_ciclo_filtrado)
-                st.plotly_chart(fig_setores, use_container_width=True)
+                col1, col2 = st.columns([3, 2])
 
-            with col2:
-                st.markdown("#### 📋 Resumo por Ciclo")
-                if not df_setor_ciclo_filtrado.empty:
-                    df_ciclo = calcular_estatisticas_ciclo(df_setor_ciclo_filtrado)
-                    st.dataframe(df_ciclo, use_container_width=True, hide_index=True)
+                with col1:
+                    st.plotly_chart(fig_setores, use_container_width=True)
+
+                with col2:
+                    # Criar tabela rankeada
+                    df_tabela = df_top_setores.copy()
+                    df_tabela['Rank'] = range(1, len(df_tabela) + 1)
+                    df_tabela['Valor'] = df_tabela['ValorTotal'].apply(
+                        lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                    )
+                    df_tabela['Clientes'] = df_tabela['ClientesAtivos'].astype(int)
+                    df_tabela = df_tabela[['Rank', VENDAS_COL_SETOR, 'Clientes', 'Valor']]
+                    df_tabela.columns = ['#', 'Setor', 'Clientes', 'Valor Total']
+                    st.dataframe(df_tabela, use_container_width=True, hide_index=True, height=320)
+
+            st.markdown("---")
+
+            # Resumo por Ciclo
+            st.markdown("#### 📋 Resumo por Ciclo")
+            if not df_setor_ciclo_filtrado.empty:
+                df_ciclo = calcular_estatisticas_ciclo(df_setor_ciclo_filtrado)
+                st.dataframe(df_ciclo, use_container_width=True, hide_index=True)
 
             st.markdown("---")
 
