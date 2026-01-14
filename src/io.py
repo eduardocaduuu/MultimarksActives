@@ -538,6 +538,14 @@ def processar_vendas(arquivo: BytesIO, nome_arquivo: str) -> Tuple[pd.DataFrame,
     # Normalizar CodigoProduto
     df[COL_CODIGO_PRODUTO_NORMALIZADO] = df[VENDAS_COL_CODIGO_PRODUTO].apply(normalizar_sku)
 
+    # Converter colunas numéricas (lidas como string) para tipos corretos
+    colunas_numericas = [VENDAS_COL_QTD_ITENS, VENDAS_COL_VALOR]
+    for col in colunas_numericas:
+        if col in df.columns:
+            # Substituir vírgula por ponto e converter para numérico
+            df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
     # Contar registros por tipo
     contagem_tipos = df[VENDAS_COL_TIPO].value_counts()
     total_vendas = contagem_tipos.get(TIPO_VENDA, 0)
