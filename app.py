@@ -601,6 +601,19 @@ def main():
         df_bd_iaf = None
         avisos_iaf = []
 
+    # Combinar BD Produtos + BD IAF para enriquecimento geral
+    if bd_carregado and iaf_carregado:
+        df_bd_combinado = pd.concat([df_bd, df_bd_iaf], ignore_index=True)
+        # Remover duplicatas de SKU (manter primeiro = BD geral tem prioridade)
+        df_bd_combinado = df_bd_combinado.drop_duplicates(subset=['SKU_normalizado'], keep='first')
+        total_produtos_combinado = len(df_bd_combinado)
+    elif bd_carregado:
+        df_bd_combinado = df_bd
+        total_produtos_combinado = len(df_bd)
+    else:
+        df_bd_combinado = None
+        total_produtos_combinado = 0
+
     # Sidebar
     with st.sidebar:
         st.markdown("### 📁 Upload de Dados")
@@ -610,8 +623,9 @@ def main():
             st.markdown(f"""
                 <div class="info-card">
                     <strong>✅ BD Produtos Carregado</strong><br>
-                    <span style="color: {COLORS['primary']}; font-size: 1.5rem; font-weight: bold;">{len(df_bd):,}</span>
+                    <span style="color: {COLORS['primary']}; font-size: 1.5rem; font-weight: bold;">{total_produtos_combinado:,}</span>
                     <span style="color: {COLORS['muted']};"> produtos</span>
+                    <br><small style="color: {COLORS['muted']};">({len(df_bd):,} geral + {len(df_bd_iaf) if iaf_carregado else 0:,} IAF)</small>
                 </div>
             """, unsafe_allow_html=True)
         else:
@@ -695,9 +709,9 @@ def main():
                         _, csv_fix_report, csv_fixed_bytes = ler_arquivo(vendas_buffer, arquivo_vendas.name, return_report=True)
                         vendas_buffer.seek(0)  # Reset para processar_vendas usar
                     
-                    dados = processar_vendas_cached(vendas_bytes, arquivo_vendas.name, df_bd)
-                    dados['avisos'] = [f"[BD] {a}" for a in avisos_bd] + dados['avisos']
-                    dados['df_bd'] = df_bd
+                    dados = processar_vendas_cached(vendas_bytes, arquivo_vendas.name, df_bd_combinado)
+                    dados['avisos'] = [f"[BD] {a}" for a in avisos_bd] + [f"[IAF] {a}" for a in (avisos_iaf or [])] + dados['avisos']
+                    dados['df_bd'] = df_bd_combinado
                     dados['csv_fix_report'] = csv_fix_report
                     dados['csv_fixed_bytes'] = csv_fixed_bytes
                     st.session_state['dados_processados'] = dados
