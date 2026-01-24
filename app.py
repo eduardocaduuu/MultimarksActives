@@ -1142,7 +1142,7 @@ def main():
 
         # TAB: IAF
         with tab_iaf:
-            st.markdown("#### 🏆 Vendas de Itens IAF (Premiacao)")
+            st.markdown("#### 🏆 Vendas de Itens IAF")
 
             if not iaf_carregado:
                 st.warning("⚠️ BD IAF nao carregado. Verifique o arquivo `data/iaf_2026.xlsx`.")

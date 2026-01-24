@@ -10,7 +10,10 @@
       "Bash(git push:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Adiciona aba de Produtos Novos/Lancamentos\n\n- Nova aba \"Produtos Novos\" para exibir produtos nao cadastrados no BD\n- Mostra SKU, Nome do Produto \\(da planilha de vendas\\), quantidade e valor\n- Facilita identificacao de lancamentos que precisam ser cadastrados\n- Exportacao em CSV/Excel dos produtos nao cadastrados\n- Ordenacao por valor total \\(mais relevantes primeiro\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Carrega BD Produtos automaticamente de arquivo fixo\n\n- BD Produtos agora é carregado de data/bd_produtos.csv automaticamente\n- Removido upload do BD Produtos \\(apenas Vendas precisa de upload\\)\n- Nova funcao carregar_bd_produtos_local\\(\\) em io.py\n- Cache com st.cache_data para leitura do BD\n- Sidebar simplificada mostrando status do BD carregado\n- Arquivo bd_produtos.csv incluido no repositorio\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(git remote set-url:*)"
     ]
   }
 }
