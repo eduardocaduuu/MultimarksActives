@@ -624,8 +624,7 @@ def main():
                 <div class="info-card">
                     <strong>✅ BD Produtos Carregado</strong><br>
                     <span style="color: {COLORS['primary']}; font-size: 1.5rem; font-weight: bold;">{total_produtos_combinado:,}</span>
-                    <span style="color: {COLORS['muted']};"> produtos</span>
-                    <br><small style="color: {COLORS['muted']};">({len(df_bd):,} geral + {len(df_bd_iaf) if iaf_carregado else 0:,} IAF)</small>
+                    <span style="color: {COLORS['muted']};"> produtos unicos</span>
                 </div>
             """, unsafe_allow_html=True)
         else:
