@@ -15,6 +15,8 @@ from .constants import (
     VENDAS_COL_SETOR,
     VENDAS_COL_CODIGO_REVENDEDORA,
     VENDAS_COL_NOME_REVENDEDORA,
+    VENDAS_COL_QTD_ITENS,
+    VENDAS_COL_VALOR,
     COL_CLIENTE_ID,
     COL_MARCAS_DISTINTAS,
     COL_IS_MULTIMARCAS,
@@ -322,3 +324,48 @@ def calcular_estatisticas_ciclo(df_setor_ciclo: pd.DataFrame) -> pd.DataFrame:
     })
 
     return agg
+
+
+def formatar_tabela_iaf(df_iaf: pd.DataFrame) -> pd.DataFrame:
+    """
+    Formata a tabela de vendas IAF para exibicao.
+
+    Args:
+        df_iaf: DataFrame com vendas de itens IAF
+
+    Returns:
+        DataFrame formatado para exibicao
+    """
+    if df_iaf.empty:
+        return df_iaf
+
+    df_fmt = df_iaf.copy()
+
+    # Ordenar por ciclo, setor e valor
+    df_fmt = df_fmt.sort_values(
+        [VENDAS_COL_CICLO, VENDAS_COL_SETOR, VENDAS_COL_VALOR],
+        ascending=[True, True, False]
+    )
+
+    # Formatar valores numericos
+    if VENDAS_COL_QTD_ITENS in df_fmt.columns:
+        df_fmt[VENDAS_COL_QTD_ITENS] = df_fmt[VENDAS_COL_QTD_ITENS].apply(formatar_numero_br)
+    if VENDAS_COL_VALOR in df_fmt.columns:
+        df_fmt[VENDAS_COL_VALOR] = df_fmt[VENDAS_COL_VALOR].apply(formatar_moeda_br)
+
+    # Renomear colunas para exibicao
+    colunas_renomear = {
+        VENDAS_COL_CICLO: 'Ciclo',
+        VENDAS_COL_SETOR: 'Setor',
+        VENDAS_COL_CODIGO_REVENDEDORA: 'Cod. Revendedora',
+        VENDAS_COL_NOME_REVENDEDORA: 'Nome Revendedora',
+        'SKU': 'SKU',
+        'Nome_IAF': 'Produto IAF',
+        'Marca_IAF': 'Marca',
+        VENDAS_COL_QTD_ITENS: 'Quantidade',
+        VENDAS_COL_VALOR: 'Valor'
+    }
+
+    df_fmt = df_fmt.rename(columns=colunas_renomear)
+
+    return df_fmt

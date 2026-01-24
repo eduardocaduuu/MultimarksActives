@@ -21,6 +21,10 @@ from .constants import (
     BD_COL_SKU,
     BD_COL_NOME,
     BD_COL_MARCA,
+    BD_IAF_REQUIRED_COLUMNS,
+    BD_IAF_COL_SKU,
+    BD_IAF_COL_NOME,
+    BD_IAF_COL_MARCA,
     VENDAS_REQUIRED_COLUMNS,
     VENDAS_OPTIONAL_COLUMNS,
     VENDAS_COL_CODIGO_PRODUTO,
@@ -749,3 +753,67 @@ def gerar_id_cliente(row: pd.Series) -> str:
     setor = row.get(VENDAS_COL_SETOR, "")
 
     return f"{nome}|{setor}"
+
+
+def carregar_bd_iaf_local(caminho: str = "data/iaf_2026.xlsx") -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Carrega o BD IAF (premiacao) de um arquivo Excel local fixo.
+
+    Args:
+        caminho: Caminho para o arquivo Excel (padrao: data/iaf_2026.xlsx)
+
+    Returns:
+        Tupla (DataFrame processado, lista de avisos)
+
+    Raises:
+        DataValidationError: Se arquivo nao existir ou colunas faltarem
+    """
+    import os
+
+    avisos = []
+
+    # Verificar se arquivo existe
+    if not os.path.exists(caminho):
+        raise DataValidationError(
+            f"Arquivo BD IAF nao encontrado: {caminho}"
+        )
+
+    # Ler Excel com dtype=str para preservar SKUs como string
+    try:
+        df = pd.read_excel(
+            caminho,
+            engine='openpyxl',
+            dtype=str,
+        )
+    except Exception as e:
+        raise DataValidationError(
+            f"Nao foi possivel ler o arquivo IAF {caminho}: {str(e)}"
+        )
+
+    # Normalizar nomes de colunas (remover espacos)
+    df.columns = df.columns.str.strip()
+
+    # Validar colunas obrigatorias
+    valido, faltantes = validar_colunas(df, BD_IAF_REQUIRED_COLUMNS, "BD IAF")
+    if not valido:
+        raise DataValidationError(
+            f"Colunas obrigatorias faltando em BD IAF: {', '.join(faltantes)}"
+        )
+
+    # Normalizar SKU
+    df[COL_SKU_NORMALIZADO] = df[BD_IAF_COL_SKU].apply(normalizar_sku)
+
+    # Normalizar Marca
+    df[BD_IAF_COL_MARCA] = df[BD_IAF_COL_MARCA].apply(normalizar_marca)
+
+    # Remover linhas com SKU vazio apos normalizacao
+    linhas_antes = len(df)
+    df = df[df[COL_SKU_NORMALIZADO] != ""]
+    linhas_removidas = linhas_antes - len(df)
+
+    if linhas_removidas > 0:
+        avisos.append(f"{linhas_removidas} linhas removidas por SKU vazio/invalido")
+
+    avisos.append(f"BD IAF carregado: {len(df)} produtos")
+
+    return df, avisos

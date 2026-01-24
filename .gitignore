@@ -47,6 +47,7 @@ Thumbs.db
 *.csv
 !*_Teste.csv
 !data/bd_produtos.csv
+!data/iaf_2026.xlsx
 
 # Logs
 *.log

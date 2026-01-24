@@ -105,6 +105,15 @@ COL_IS_MULTIMARCAS = "IsMultimarcas"
 COL_MARCAS_COMPRADAS = "MarcasCompradas"
 
 # =============================================================================
+# BD IAF (Premiacao IAF - Base fixa)
+# =============================================================================
+BD_IAF_COL_SKU = "SKU"
+BD_IAF_COL_NOME = "Nome"
+BD_IAF_COL_MARCA = "Marca"
+BD_IAF_REQUIRED_COLUMNS = [BD_IAF_COL_SKU, BD_IAF_COL_NOME, BD_IAF_COL_MARCA]
+BD_IAF_PATH = "data/iaf_2026.xlsx"
+
+# =============================================================================
 # TEXTOS DA INTERFACE
 # =============================================================================
 APP_TITLE = "Multimarks Active Circles"

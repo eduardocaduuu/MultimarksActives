@@ -25,11 +25,13 @@ from src.constants import (
     COL_IS_MULTIMARCAS,
     COL_CLIENTE_ID,
     MARCA_DESCONHECIDA,
+    BD_IAF_PATH,
 )
 from src.io import (
     processar_bd_produtos,
     processar_vendas,
     carregar_bd_produtos_local,
+    carregar_bd_iaf_local,
     corrigir_csv,
     DataValidationError,
 )
@@ -44,11 +46,13 @@ from src.transform import (
     gerar_auditoria_skus,
     gerar_produtos_nao_cadastrados,
     aplicar_filtros,
+    cruzar_vendas_com_iaf,
 )
 from src.reports import (
     formatar_tabela_setor_ciclo,
     formatar_tabela_multimarcas,
     formatar_tabela_auditoria,
+    formatar_tabela_iaf,
     gerar_resumo_metricas,
     formatar_valor,
     gerar_lista_clientes_para_selecao,
@@ -312,6 +316,12 @@ CHART_COLORS = ['#6C63FF', '#A855F7', '#00D26A', '#00B4D8', '#FFC107', '#FF6B6B'
 def carregar_bd_produtos_cached():
     """Carrega o BD Produtos do arquivo fixo com cache."""
     return carregar_bd_produtos_local(BD_PRODUTOS_PATH)
+
+
+@st.cache_data(show_spinner=False)
+def carregar_bd_iaf_cached():
+    """Carrega o BD IAF do arquivo fixo com cache."""
+    return carregar_bd_iaf_local(BD_IAF_PATH)
 
 
 @st.cache_data(show_spinner=False)
@@ -581,6 +591,16 @@ def main():
         df_bd = None
         avisos_bd = []
 
+    # Carregar BD IAF
+    try:
+        df_bd_iaf, avisos_iaf = carregar_bd_iaf_cached()
+        iaf_carregado = True
+    except DataValidationError as e:
+        st.warning(f"⚠️ BD IAF nao carregado: {str(e)}")
+        iaf_carregado = False
+        df_bd_iaf = None
+        avisos_iaf = []
+
     # Sidebar
     with st.sidebar:
         st.markdown("### 📁 Upload de Dados")
@@ -821,12 +841,13 @@ def main():
         # ==========================================================================
         # TABS PRINCIPAIS
         # ==========================================================================
-        tab_visao, tab_multi, tab_novos, tab_audit, tab_cliente = st.tabs([
+        tab_visao, tab_multi, tab_novos, tab_audit, tab_cliente, tab_iaf = st.tabs([
             "📊 Visao Geral",
             "⭐ Multimarcas",
             "🆕 Produtos Novos",
             "🔍 Auditoria",
-            "👤 Cliente"
+            "👤 Cliente",
+            "🏆 IAF"
         ])
 
         # TAB: VISAO GERAL
@@ -1105,6 +1126,82 @@ def main():
                         st.info("Nenhum item encontrado.")
             else:
                 st.info("Nenhum cliente encontrado para os filtros selecionados.")
+
+        # TAB: IAF
+        with tab_iaf:
+            st.markdown("#### 🏆 Vendas de Itens IAF (Premiacao)")
+
+            if not iaf_carregado:
+                st.warning("⚠️ BD IAF nao carregado. Verifique o arquivo `data/iaf_2026.xlsx`.")
+            else:
+                st.markdown(f"Base IAF com **{len(df_bd_iaf):,}** produtos carregados.")
+
+                # Cruzar vendas com IAF
+                df_iaf = cruzar_vendas_com_iaf(dados['df_vendas_enriquecido'], df_bd_iaf)
+
+                # Aplicar filtros de ciclo e setor
+                if ciclos_selecionados and not df_iaf.empty:
+                    df_iaf = df_iaf[df_iaf[VENDAS_COL_CICLO].isin(ciclos_selecionados)]
+                if setores_selecionados and not df_iaf.empty:
+                    df_iaf = df_iaf[df_iaf[VENDAS_COL_SETOR].isin(setores_selecionados)]
+
+                if not df_iaf.empty:
+                    # Metricas
+                    total_itens_iaf = df_iaf['QuantidadeItens'].sum()
+                    total_valor_iaf = df_iaf['ValorPraticado'].sum()
+                    total_clientes_iaf = df_iaf['CodigoRevendedora'].nunique()
+                    total_skus_iaf = df_iaf['SKU'].nunique()
+
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        render_metric_card("Clientes", f"{total_clientes_iaf:,}", "👥")
+                    with col2:
+                        render_metric_card("SKUs IAF", f"{total_skus_iaf:,}", "📦")
+                    with col3:
+                        render_metric_card("Itens", f"{total_itens_iaf:,.0f}", "🛒")
+                    with col4:
+                        render_metric_card("Valor", f"R$ {total_valor_iaf:,.0f}", "💰")
+
+                    st.markdown("---")
+
+                    # Tabela de vendas IAF
+                    df_iaf_fmt = formatar_tabela_iaf(df_iaf)
+                    st.dataframe(df_iaf_fmt, use_container_width=True, hide_index=True)
+
+                    col1, col2, col3 = st.columns([1, 1, 2])
+                    with col1:
+                        st.download_button(
+                            "📥 CSV",
+                            data=exportar_csv(df_iaf_fmt),
+                            file_name=gerar_nome_arquivo("vendas_iaf", "csv"),
+                            mime="text/csv",
+                            key="dl_iaf_csv"
+                        )
+                    with col2:
+                        st.download_button(
+                            "📥 Excel",
+                            data=exportar_excel(df_iaf_fmt, "VendasIAF"),
+                            file_name=gerar_nome_arquivo("vendas_iaf", "xlsx"),
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="dl_iaf_xlsx"
+                        )
+
+                    st.markdown("---")
+
+                    # Top produtos IAF
+                    st.markdown("#### 📊 Top Produtos IAF mais Vendidos")
+                    df_top_iaf = df_iaf.groupby(['SKU', 'Nome_IAF', 'Marca_IAF']).agg({
+                        'QuantidadeItens': 'sum',
+                        'ValorPraticado': 'sum'
+                    }).reset_index().sort_values('ValorPraticado', ascending=False).head(15)
+
+                    df_top_iaf['ValorPraticado'] = df_top_iaf['ValorPraticado'].apply(
+                        lambda x: f"R$ {x:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                    )
+                    df_top_iaf.columns = ['SKU', 'Produto', 'Marca', 'Quantidade', 'Valor Total']
+                    st.dataframe(df_top_iaf, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhuma venda de itens IAF encontrada para os filtros selecionados.")
 
 
 # =============================================================================

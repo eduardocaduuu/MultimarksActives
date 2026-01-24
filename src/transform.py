@@ -37,6 +37,9 @@ from .constants import (
     MARCA_DESCONHECIDA,
     MOTIVO_NAO_ENCONTRADO,
     ALERTA_SKU_NAO_ENCONTRADO_PERCENT,
+    BD_IAF_COL_SKU,
+    BD_IAF_COL_NOME,
+    BD_IAF_COL_MARCA,
 )
 
 from .io import criar_indice_sku, buscar_sku, gerar_id_cliente
@@ -506,3 +509,81 @@ def aplicar_filtros(
         df_filtrado = df_filtrado[df_filtrado[COL_IS_MULTIMARCAS] == True]
 
     return df_filtrado
+
+
+def cruzar_vendas_com_iaf(
+    df_vendas_enriquecido: pd.DataFrame,
+    df_bd_iaf: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Cruza vendas com o BD IAF para identificar itens da premiacao.
+
+    Filtra apenas vendas que contem itens presentes no BD IAF (premiacao).
+    Usa a mesma logica de match de SKU do BD geral (match exato ou com zero a esquerda).
+
+    Args:
+        df_vendas_enriquecido: DataFrame de vendas enriquecido com marcas
+        df_bd_iaf: DataFrame do BD IAF processado
+
+    Returns:
+        DataFrame com vendas de itens IAF, incluindo nome e marca do IAF
+    """
+    # Criar indice de SKUs do IAF para busca rapida
+    indice_iaf = {}
+    for _, row in df_bd_iaf.iterrows():
+        sku = row[COL_SKU_NORMALIZADO]
+        if sku:
+            indice_iaf[sku] = {
+                'nome_iaf': row[BD_IAF_COL_NOME],
+                'marca_iaf': row[BD_IAF_COL_MARCA]
+            }
+            # Se o SKU tem 5 digitos e comeca com 0, criar versao sem o zero
+            if len(sku) == 5 and sku.startswith('0'):
+                sku_sem_zero = sku[1:]
+                if sku_sem_zero not in indice_iaf:
+                    indice_iaf[sku_sem_zero] = {
+                        'nome_iaf': row[BD_IAF_COL_NOME],
+                        'marca_iaf': row[BD_IAF_COL_MARCA]
+                    }
+
+    # Filtrar apenas vendas (Tipo=Venda)
+    df_vendas = df_vendas_enriquecido[
+        df_vendas_enriquecido[VENDAS_COL_TIPO] == TIPO_VENDA
+    ].copy()
+
+    # Verificar cada venda se o SKU esta no IAF
+    resultados = []
+    for _, row in df_vendas.iterrows():
+        codigo = row[COL_CODIGO_PRODUTO_NORMALIZADO]
+        info_iaf = None
+
+        # Tentar match exato
+        if codigo in indice_iaf:
+            info_iaf = indice_iaf[codigo]
+        # Tentar com zero a esquerda se for 4 digitos
+        elif len(codigo) == 4:
+            codigo_com_zero = '0' + codigo
+            if codigo_com_zero in indice_iaf:
+                info_iaf = indice_iaf[codigo_com_zero]
+
+        if info_iaf:
+            resultados.append({
+                VENDAS_COL_CICLO: row[VENDAS_COL_CICLO],
+                VENDAS_COL_SETOR: row[VENDAS_COL_SETOR],
+                VENDAS_COL_CODIGO_REVENDEDORA: row[VENDAS_COL_CODIGO_REVENDEDORA],
+                VENDAS_COL_NOME_REVENDEDORA: row[VENDAS_COL_NOME_REVENDEDORA],
+                'SKU': codigo,
+                'Nome_IAF': info_iaf['nome_iaf'],
+                'Marca_IAF': info_iaf['marca_iaf'],
+                VENDAS_COL_QTD_ITENS: row[VENDAS_COL_QTD_ITENS],
+                VENDAS_COL_VALOR: row[VENDAS_COL_VALOR],
+            })
+
+    if not resultados:
+        return pd.DataFrame(columns=[
+            VENDAS_COL_CICLO, VENDAS_COL_SETOR, VENDAS_COL_CODIGO_REVENDEDORA,
+            VENDAS_COL_NOME_REVENDEDORA, 'SKU', 'Nome_IAF', 'Marca_IAF',
+            VENDAS_COL_QTD_ITENS, VENDAS_COL_VALOR
+        ])
+
+    return pd.DataFrame(resultados)
